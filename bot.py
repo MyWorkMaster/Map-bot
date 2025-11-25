@@ -249,8 +249,10 @@ def create_main_keyboard():
     button_subscribe = types.KeyboardButton("Buy subscription")
     button_about = types.KeyboardButton("About us")
     button_how_to_use = types.KeyboardButton("How to use Map")
+    button_subscription_plans = types.KeyboardButton("Subscription Plans")
     keyboard.add(button_subscribe)
     keyboard.add(button_about, button_how_to_use)
+    keyboard.add(button_subscription_plans)  # Row 3 - bottom button
     return keyboard
 
 
@@ -327,6 +329,8 @@ def handle_hash_input(message):
             handle_about_us(message)
         elif message.text == "How to use Map":
             handle_how_to_use(message)
+        elif message.text == "Subscription Plans":
+            handle_subscription_plans(message)
         else:
             handle_other_messages(message)
         return
@@ -539,6 +543,23 @@ def handle_how_to_use(message):
     bot.send_message(
         message.chat.id,
         "🗺️ How to Use Map\n\nClick the button below to view the complete guide:",
+        reply_markup=keyboard
+    )
+
+
+def handle_subscription_plans(message):
+    """Handle Subscription Plans button - show link to Subscription Plans page"""
+    # Create inline keyboard with Subscription Plans button
+    keyboard = types.InlineKeyboardMarkup()
+    subscription_plans_button = types.InlineKeyboardButton(
+        text="Subscription Plans",
+        url="https://telegra.ph/Subscription-Plans-11-25"
+    )
+    keyboard.add(subscription_plans_button)
+    
+    bot.send_message(
+        message.chat.id,
+        "💳 Subscription Plans\n\nClick the button below to view our subscription plans:",
         reply_markup=keyboard
     )
 
