@@ -468,13 +468,37 @@ def handle_successful_payment(message):
 
 
 def handle_about_us(message):
-    """Handle About us button"""
-    bot.send_message(message.chat.id, "We Are Anomonus")
+    """Handle About us button - show link to About Us page"""
+    # Create inline keyboard with About Us button
+    keyboard = types.InlineKeyboardMarkup()
+    about_button = types.InlineKeyboardButton(
+        text="About Us",
+        url="https://telegra.ph/About-Us--What-is-Anomonus-11-25"
+    )
+    keyboard.add(about_button)
+    
+    bot.send_message(
+        message.chat.id,
+        "ℹ️ About Us\n\nClick the button below to learn more about Anomonus:",
+        reply_markup=keyboard
+    )
 
 
 def handle_how_to_use(message):
-    """Handle How to use Map button"""
-    bot.send_message(message.chat.id, "This is how to use maps")
+    """Handle How to use Map button - show link to How to Use guide"""
+    # Create inline keyboard with How to Use Map button
+    keyboard = types.InlineKeyboardMarkup()
+    how_to_use_button = types.InlineKeyboardButton(
+        text="How to Use Map",
+        url="https://telegra.ph/How-to-Use-the-Anomonus-Map-11-25"
+    )
+    keyboard.add(how_to_use_button)
+    
+    bot.send_message(
+        message.chat.id,
+        "🗺️ How to Use Map\n\nClick the button below to view the complete guide:",
+        reply_markup=keyboard
+    )
 
 
 def handle_other_messages(message):
