@@ -115,19 +115,28 @@ def check_subscription_from_map_api(telegram_user_id):
             # Check if subscription is active (API is source of truth - respects admin deactivations)
             is_active = data.get('isActive', False)
             
-            # Also check expiration if expiresAt is provided
-            if is_active:
-                expires_at = data.get('expiresAt')
-                if expires_at:
-                    # Check if subscription hasn't expired
-                    current_time = int(time.time() * 1000)  # Convert to milliseconds
-                    if expires_at <= current_time:
-                        # Subscription expired
-                        return False
-                return True
-            else:
+            if not is_active:
                 # Admin deactivated or not active
                 return False
+            
+            # Check if it's a lifetime subscription (never expires)
+            is_lifetime = data.get('isLifetime', False)
+            if is_lifetime:
+                # Lifetime subscriptions never expire (unless admin deactivates)
+                return True
+            
+            # For non-lifetime subscriptions, check expiration
+            expires_at = data.get('expiresAt')
+            if expires_at:
+                # Check if subscription hasn't expired
+                current_time = int(time.time() * 1000)  # Convert to milliseconds
+                if expires_at <= current_time:
+                    # Subscription expired
+                    return False
+                return True
+            else:
+                # No expiration date but not lifetime - treat as active
+                return True
         elif response.status_code == 404:
             # User not found in map website - not subscribed
             return False
@@ -170,7 +179,7 @@ def validate_hash_with_map_api(hash_code):
             'message': 'Error connecting to server. Please try again later.'
         }
 
-def link_telegram_user_to_website(telegram_user_id, telegram_username, userId):
+def link_telegram_user_to_website(telegram_user_id, telegram_username, userId, hash_code=None):
     """Link Telegram user to website user account"""
     try:
         import base64
@@ -187,6 +196,10 @@ def link_telegram_user_to_website(telegram_user_id, telegram_username, userId):
             "telegramUserId": telegram_user_id,
             "telegramUsername": telegram_username
         }
+        # Include hash if available (optional, but helps with linking)
+        if hash_code:
+            payload["hash"] = hash_code
+        
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
             data = response.json()
@@ -199,7 +212,7 @@ def link_telegram_user_to_website(telegram_user_id, telegram_username, userId):
         print(f"⚠️  Error linking Telegram user: {e}")
         return False
 
-def activate_subscription_in_map_api(telegram_user_id, hash_code=None, duration_days=30):
+def activate_subscription_in_map_api(telegram_user_id, hash_code=None, duration_days=30, subscription_type=None):
     """Activate subscription in map website API"""
     try:
         url = f"{MAP_API_URL}/api/subscription/activate"
@@ -210,11 +223,14 @@ def activate_subscription_in_map_api(telegram_user_id, hash_code=None, duration_
         # Include hash if available
         if hash_code:
             payload["hash"] = hash_code
+        # Include subscription type if available
+        if subscription_type:
+            payload["subscriptionType"] = subscription_type
         
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ Subscription activated in map website for user {telegram_user_id}")
+            print(f"✅ Subscription activated in map website for user {telegram_user_id} ({subscription_type or duration_days} days)")
             return True
         elif response.status_code == 404:
             print(f"⚠️  User {telegram_user_id} not found in map website. User must start bot first.")
@@ -339,7 +355,8 @@ def handle_hash_input(message):
             link_success = link_telegram_user_to_website(
                 user_id,
                 telegram_username,
-                userId
+                userId,
+                hash_code=hash_input
             )
             
             if link_success:
@@ -375,7 +392,7 @@ def handle_hash_input(message):
 
 
 def handle_buy_subscription(message):
-    """Handle Buy subscription button - sends real Telegram Stars invoice"""
+    """Handle Buy subscription button - show subscription type options"""
     user_id = message.from_user.id
     
     # Check subscription status via API (real-time, respects admin deactivations)
@@ -390,39 +407,34 @@ def handle_buy_subscription(message):
         )
         return
     
-    # User is not subscribed, send invoice
-    try:
-        # Send real Telegram Stars invoice (1 star for testing)
-        bot.send_invoice(
-            chat_id=message.chat.id,
-            title="Anomonus Bot Subscription",
-            description="Subscribe to Anomonus Bot to access premium features on our map website",
-            invoice_payload="subscription_payment_1_star",
-            provider_token="",  # Empty for Telegram Stars payments
-            currency="XTR",  # XTR is the currency code for Telegram Stars
-            prices=[types.LabeledPrice(label="Subscription (1 Star)", amount=1)],
-            start_parameter="subscription"
-        )
-        
-        # Send "Buy Stars" button below the invoice
-        keyboard = types.InlineKeyboardMarkup()
-        buy_stars_button = types.InlineKeyboardButton(
-            text="Buy Stars",
-            url="https://t.me/anomonuschannel"
-        )
-        keyboard.add(buy_stars_button)
-        bot.send_message(
-            message.chat.id,
-            "Need Telegram Stars?",
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        # If invoice fails, send error message
-        bot.send_message(
-            message.chat.id,
-            f"Error creating invoice: {str(e)}\nPlease try again later.",
-            reply_markup=create_main_keyboard()
-        )
+    # User is not subscribed, show subscription type options
+    keyboard = types.InlineKeyboardMarkup()
+    button_1month = types.InlineKeyboardButton(
+        text="1 Month - 115 Stars",
+        callback_data="subscribe_1month"
+    )
+    button_6month = types.InlineKeyboardButton(
+        text="6 Months - 520 Stars",
+        callback_data="subscribe_6month"
+    )
+    button_12month = types.InlineKeyboardButton(
+        text="1 Year - 830 Stars",
+        callback_data="subscribe_12month"
+    )
+    button_lifetime = types.InlineKeyboardButton(
+        text="Lifetime - 2500 Stars",
+        callback_data="subscribe_lifetime"
+    )
+    keyboard.add(button_1month)
+    keyboard.add(button_6month)
+    keyboard.add(button_12month)
+    keyboard.add(button_lifetime)
+    
+    bot.send_message(
+        message.chat.id,
+        "💳 Choose Your Subscription Plan\n\nSelect a subscription type:",
+        reply_markup=keyboard
+    )
 
 
 # Payment handlers for Telegram Stars
@@ -442,27 +454,57 @@ def handle_successful_payment(message):
     
     # Log payment details
     payment = message.successful_payment
-    print(f"💳 Payment received from user {user_id}: {payment.total_amount} {payment.currency}")
+    payment_amount = payment.total_amount
+    invoice_payload = payment.invoice_payload
+    
+    print(f"💳 Payment received from user {user_id}: {payment_amount} {payment.currency}")
     if user_hash:
         print(f"   Hash: {user_hash}")
     
-    # Activate subscription in map website API (source of truth) - include hash
-    subscription_activated = activate_subscription_in_map_api(user_id, hash_code=user_hash, duration_days=30)
+    # Determine subscription type and duration from invoice payload
+    subscription_plans = {
+        'subscription_1month': {'duration_days': 30, 'type': '1month'},
+        'subscription_6month': {'duration_days': 180, 'type': '6month'},
+        'subscription_12month': {'duration_days': 365, 'type': '12month'},
+        'subscription_lifetime': {'duration_days': 99999, 'type': 'lifetime'}
+    }
+    
+    # Default to 1 month if payload doesn't match
+    plan_info = subscription_plans.get(invoice_payload, {'duration_days': 30, 'type': '1month'})
+    duration_days = plan_info['duration_days']
+    subscription_type = plan_info['type']
+    
+    # Activate subscription in map website API (source of truth) - include hash and type
+    subscription_activated = activate_subscription_in_map_api(
+        user_id, 
+        hash_code=user_hash, 
+        duration_days=duration_days,
+        subscription_type=subscription_type
+    )
     
     # Note: We don't save locally anymore - API is the source of truth
     # Local storage is only for backup/reference, but we always check API
     
+    # Create subscription type name for message
+    type_names = {
+        '1month': '1 Month',
+        '6month': '6 Months',
+        '12month': '1 Year',
+        'lifetime': 'Lifetime'
+    }
+    type_name = type_names.get(subscription_type, 'Subscription')
+    
     if subscription_activated:
         bot.send_message(
             message.chat.id,
-            "✅ Payment successful! You are now subscribed and can access premium features on our map website.",
+            f"✅ Payment successful! You are now subscribed ({type_name}) and can access premium features on our map website.",
             reply_markup=create_main_keyboard()
         )
     else:
         # Still mark as subscribed locally even if map API fails
         bot.send_message(
             message.chat.id,
-            "✅ Payment successful! You are subscribed.\n\n⚠️ Note: If you have issues accessing premium features, please contact support.",
+            f"✅ Payment successful! You are subscribed ({type_name}).\n\n⚠️ Note: If you have issues accessing premium features, please contact support.",
             reply_markup=create_main_keyboard()
         )
 
@@ -512,10 +554,94 @@ def handle_other_messages(message):
     )
 
 
-# Handle callback queries (if needed for other features)
+# Handle callback queries for subscription types
+@bot.callback_query_handler(func=lambda call: call.data.startswith('subscribe_'))
+def handle_subscription_callback(call):
+    """Handle subscription type selection"""
+    user_id = call.from_user.id
+    
+    # Check if already subscribed
+    is_subscribed = check_subscription_from_map_api(user_id)
+    if is_subscribed:
+        bot.answer_callback_query(call.id, "You already subscribed", show_alert=True)
+        return
+    
+    # Get subscription type and details
+    subscription_type = call.data.replace('subscribe_', '')
+    
+    subscription_plans = {
+        '1month': {
+            'title': 'Anomonus Bot Subscription - 1 Month',
+            'description': '1 month subscription to access premium features on our map website',
+            'amount': 115,
+            'duration_days': 30,
+            'payload': 'subscription_1month'
+        },
+        '6month': {
+            'title': 'Anomonus Bot Subscription - 6 Months',
+            'description': '6 months subscription to access premium features on our map website',
+            'amount': 520,
+            'duration_days': 180,
+            'payload': 'subscription_6month'
+        },
+        '12month': {
+            'title': 'Anomonus Bot Subscription - 1 Year',
+            'description': '1 year subscription to access premium features on our map website',
+            'amount': 830,
+            'duration_days': 365,
+            'payload': 'subscription_12month'
+        },
+        'lifetime': {
+            'title': 'Anomonus Bot Subscription - Lifetime',
+            'description': 'Lifetime subscription to access premium features on our map website',
+            'amount': 2500,
+            'duration_days': 99999,  # Very large number for lifetime
+            'payload': 'subscription_lifetime'
+        }
+    }
+    
+    plan = subscription_plans.get(subscription_type)
+    if not plan:
+        bot.answer_callback_query(call.id, "Invalid subscription type", show_alert=True)
+        return
+    
+    try:
+        # Send invoice for selected subscription type
+        bot.send_invoice(
+            chat_id=call.message.chat.id,
+            title=plan['title'],
+            description=plan['description'],
+            invoice_payload=plan['payload'],
+            provider_token="",  # Empty for Telegram Stars payments
+            currency="XTR",  # XTR is the currency code for Telegram Stars
+            prices=[types.LabeledPrice(label=f"Subscription ({plan['amount']} Stars)", amount=plan['amount'])],
+            start_parameter=f"subscription_{subscription_type}"
+        )
+        
+        # Store subscription type for later use in payment handler
+        # We'll store it in the invoice payload or use a temporary storage
+        bot.answer_callback_query(call.id, "Invoice sent!")
+        
+        # Send "Buy Stars" button below the invoice
+        keyboard = types.InlineKeyboardMarkup()
+        buy_stars_button = types.InlineKeyboardButton(
+            text="Buy Stars",
+            url="https://t.me/anomonuschannel"
+        )
+        keyboard.add(buy_stars_button)
+        bot.send_message(
+            call.message.chat.id,
+            "Need Telegram Stars?",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"Error: {str(e)}", show_alert=True)
+        print(f"Error sending invoice: {e}")
+
+# Handle other callback queries
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    """Handle callback queries"""
+    """Handle other callback queries"""
     bot.answer_callback_query(call.id, "Processing...")
 
 
