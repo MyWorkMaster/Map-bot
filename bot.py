@@ -29,7 +29,7 @@ CORS(app)  # Enable CORS for website requests
 
 # Store subscribed users (in production, use a database)
 # Using file-based storage for persistence
-SUBSCRIPTIONS_FILE = "subscribed_users.json"
+SUBSCRIPTIONS_FILE = "data/subscribed_users.json"
 
 def load_subscribed_users():
     """Load subscribed users from file"""
@@ -79,7 +79,7 @@ print("✅ All users have been unsubscribed")
 
 # Store user hashes (telegram_user_id -> hash mapping)
 user_hashes = {}  # {telegram_user_id: hash}
-HASHES_FILE = "user_hashes.json"
+HASHES_FILE = "data/user_hashes.json"
 
 def load_user_hashes():
     """Load user hashes from file"""

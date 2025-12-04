@@ -150,6 +150,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Project-specific
+# Data files (uncomment if you want to ignore data files)
+# data/*.json
+# Keep data directory structure
+!data/.gitkeep
+
 # pytype static type analyzer
 .pytype/
 
