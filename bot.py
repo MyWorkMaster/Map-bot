@@ -151,39 +151,6 @@ def validate_hash_with_map_api(hash_code):
             'message': 'Error connecting to server. Please try again later.'
         }
 
-def link_telegram_user_to_website(telegram_user_id, telegram_username, userId, hash_code=None):
-    """Link Telegram user to website user account"""
-    try:
-        import base64
-        
-        # Encode userId as base64url
-        def base64url_encode(s):
-            return base64.urlsafe_b64encode(s.encode()).decode().rstrip('=')
-        
-        start_param = base64url_encode(userId)
-        
-        url = f"{MAP_API_URL}/api/subscription/link-telegram"
-        payload = {
-            "startParam": start_param,
-            "telegramUserId": telegram_user_id,
-            "telegramUsername": telegram_username
-        }
-        # Include hash if available (optional, but helps with linking)
-        if hash_code:
-            payload["hash"] = hash_code
-        
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Telegram user {telegram_user_id} linked to website user {userId}")
-            return True
-        else:
-            print(f"⚠️  Failed to link Telegram user: {response.status_code} - {response.text}")
-            return False
-    except Exception as e:
-        print(f"⚠️  Error linking Telegram user: {e}")
-        return False
-
 def activate_subscription_in_map_api(telegram_user_id, hash_code=None, duration_days=30, subscription_type=None):
     """Activate subscription in map website API"""
     try:
@@ -280,7 +247,7 @@ def handle_start(message):
         )
         return
     
-    # Validate hash with map website API
+    # Validate hash with map website API (only API call on start)
     validation_result = validate_hash_with_map_api(hash_code)
     
     if not validation_result['valid']:
@@ -292,25 +259,8 @@ def handle_start(message):
     
     # Hash is valid, get subscription details
     subscription_info = SUBSCRIPTION_TYPES[subscription_type]
-    userId = validation_result.get('userId')
     
-    # Link Telegram user to website user
-    telegram_username = message.from_user.username
-    link_success = link_telegram_user_to_website(
-        user_id,
-        telegram_username,
-        userId,
-        hash_code=hash_code
-    )
-    
-    if not link_success:
-        bot.send_message(
-            message.chat.id,
-            "❌ Failed to link account. Please try again later."
-        )
-        return
-    
-    # Save hash for user
+    # Save hash for user (needed for payment handler)
     user_hashes[str(user_id)] = hash_code
     save_user_hashes()
     
