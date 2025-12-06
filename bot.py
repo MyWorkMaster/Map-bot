@@ -1,8 +1,5 @@
 import telebot
 from telebot import types
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import threading
 import json
 import os
 import time
@@ -18,7 +15,7 @@ REAL_BOT_TOKEN = "7837025186:AAH4SKBBwBsf9mc4XZVJ4sN_ksCSCKSrxSw"
 BOT_TOKEN = REAL_BOT_TOKEN
 
 # Map Website API Configuration
-MAP_API_URL = os.getenv('MAP_API_URL', 'http://localhost:4000')  # Map website API URL
+MAP_API_URL = os.getenv('MAP_API_URL', 'https://anomonus.com')  # Map website API URL
 
 # Subscription Types and Prices (in Telegram Stars)
 SUBSCRIPTION_TYPES = {
@@ -51,60 +48,6 @@ SUBSCRIPTION_TYPES = {
 
 # Initialize bot
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# Initialize Flask API server
-app = Flask(__name__)
-CORS(app)  # Enable CORS for website requests
-
-# Store subscribed users (in production, use a database)
-# Using file-based storage for persistence
-SUBSCRIPTIONS_FILE = "data/subscribed_users.json"
-
-def load_subscribed_users():
-    """Load subscribed users from file"""
-    if os.path.exists(SUBSCRIPTIONS_FILE):
-        try:
-            with open(SUBSCRIPTIONS_FILE, 'r') as f:
-                data = json.load(f)
-                return set(data.get('users', []))
-        except:
-            return set()
-    return set()
-
-def save_subscribed_users(users_set):
-    """Save subscribed users to file"""
-    try:
-        with open(SUBSCRIPTIONS_FILE, 'w') as f:
-            json.dump({'users': list(users_set)}, f)
-    except Exception as e:
-        print(f"Error saving subscriptions: {e}")
-
-def clear_all_subscriptions():
-    """Clear all subscribed users"""
-    global subscribed_users
-    subscribed_users.clear()
-    save_subscribed_users(subscribed_users)
-    print("✅ All subscriptions cleared")
-
-def unsubscribe_user(user_id):
-    """Unsubscribe a specific user"""
-    global subscribed_users
-    if user_id in subscribed_users:
-        subscribed_users.remove(user_id)
-        save_subscribed_users(subscribed_users)
-        print(f"✅ User {user_id} unsubscribed")
-        return True
-    else:
-        print(f"⚠️  User {user_id} was not subscribed")
-        return False
-
-# Load subscribed users on startup
-subscribed_users = load_subscribed_users()
-
-# Clear all subscriptions on startup (as requested)
-print("🔄 Clearing all subscriptions...")
-clear_all_subscriptions()
-print("✅ All users have been unsubscribed")
 
 # Store user hashes (telegram_user_id -> hash mapping)
 user_hashes = {}  # {telegram_user_id: hash}
@@ -537,140 +480,7 @@ def handle_successful_payment(message):
 
 
 
-# ==================== API ENDPOINTS ====================
-
-@app.route('/api/check-subscription', methods=['GET'])
-def check_subscription():
-    """Check if a user is subscribed (API is source of truth - respects admin deactivations)"""
-    user_id = request.args.get('user_id')
-    
-    if not user_id:
-        return jsonify({
-            'success': False,
-            'error': 'user_id parameter is required'
-        }), 400
-    
-    try:
-        user_id = int(user_id)
-        # Check subscription via API (real-time, source of truth)
-        # This ensures admin deactivations are immediately respected
-        is_subscribed = check_subscription_from_map_api(user_id)
-        
-        return jsonify({
-            'success': True,
-            'user_id': user_id,
-            'is_subscribed': is_subscribed,
-            'source': 'map_api'  # Always from API
-        })
-    except ValueError:
-        return jsonify({
-            'success': False,
-            'error': 'Invalid user_id format'
-        }), 400
-
-@app.route('/api/subscribe', methods=['POST'])
-def subscribe_user():
-    """Mark a user as subscribed (for website to call after payment verification)"""
-    data = request.get_json()
-    user_id = data.get('user_id')
-    api_key = data.get('api_key')  # Optional API key for security
-    
-    if not user_id:
-        return jsonify({
-            'success': False,
-            'error': 'user_id is required'
-        }), 400
-    
-    try:
-        user_id = int(user_id)
-        subscribed_users.add(user_id)
-        save_subscribed_users(subscribed_users)  # Save to file
-        
-        return jsonify({
-            'success': True,
-            'user_id': user_id,
-            'message': 'User subscribed successfully'
-        })
-    except ValueError:
-        return jsonify({
-            'success': False,
-            'error': 'Invalid user_id format'
-        }), 400
-
-@app.route('/api/user-info', methods=['GET'])
-def get_user_info():
-    """Get user information (subscription status from API - real-time)"""
-    user_id = request.args.get('user_id')
-    
-    if not user_id:
-        return jsonify({
-            'success': False,
-            'error': 'user_id parameter is required'
-        }), 400
-    
-    try:
-        user_id = int(user_id)
-        # Check subscription via API (real-time, respects admin deactivations)
-        is_subscribed = check_subscription_from_map_api(user_id)
-        
-        return jsonify({
-            'success': True,
-            'user_id': user_id,
-            'is_subscribed': is_subscribed,
-            'source': 'map_api'  # Always from API
-        })
-    except ValueError:
-        return jsonify({
-            'success': False,
-            'error': 'Invalid user_id format'
-        }), 400
-
-@app.route('/api/unsubscribe', methods=['POST'])
-def unsubscribe_user_api():
-    """Unsubscribe a user (remove from local storage)"""
-    data = request.get_json()
-    user_id = data.get('user_id')
-    
-    if not user_id:
-        return jsonify({
-            'success': False,
-            'error': 'user_id is required'
-        }), 400
-    
-    try:
-        user_id = int(user_id)
-        success = unsubscribe_user(user_id)
-        
-        return jsonify({
-            'success': success,
-            'user_id': user_id,
-            'message': 'User unsubscribed successfully' if success else 'User was not subscribed'
-        })
-    except ValueError:
-        return jsonify({
-            'success': False,
-            'error': 'Invalid user_id format'
-        }), 400
-
-@app.route('/api/clear-subscriptions', methods=['POST'])
-def clear_subscriptions_api():
-    """Clear all subscriptions"""
-    clear_all_subscriptions()
-    return jsonify({
-        'success': True,
-        'message': 'All subscriptions cleared'
-    })
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'success': True,
-        'status': 'online',
-        'subscribed_users_count': len(subscribed_users)
-    })
-
-# ==================== RUN BOT AND API SERVER ====================
+# ==================== RUN BOT ====================
 
 def test_telegram_connection():
     """Test if we can reach Telegram API"""
@@ -701,41 +511,18 @@ def run_bot():
         time.sleep(5)
         run_bot()  # Retry
 
-def run_api():
-    """Run the Flask API server"""
-    print("API server is running on http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=False)
-
 if __name__ == "__main__":
-    # Run bot and API server in separate threads
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    api_thread = threading.Thread(target=run_api, daemon=True)
-    
-    bot_thread.start()
-    api_thread.start()
-    
     print("=" * 50)
-    print("Anomonus Bot & API Server Started")
+    print("Anomonus Bot Started")
     print("=" * 50)
-    print(f"Bot: Running...")
-    print(f"Bot API: http://localhost:5000")
     print(f"Map Website API: {MAP_API_URL}")
-    print("Bot API Endpoints:")
-    print("  - GET  /api/check-subscription?user_id=<id>")
-    print("  - POST /api/subscribe (JSON: {user_id: <id>})")
-    print("  - GET  /api/user-info?user_id=<id>")
-    print("  - GET  /api/health")
-    print("")
     print("Integration:")
     print("  ✅ Connected to Map Website API")
     print("  ✅ Subscriptions sync with map website")
     print("  ✅ Payment activates subscription in map website")
     print("=" * 50)
+    print("")
     
-    # Keep main thread alive
-    try:
-        while True:
-            threading.Event().wait(1)
-    except KeyboardInterrupt:
-        print("\nShutting down...")
+    # Run bot
+    run_bot()
 
